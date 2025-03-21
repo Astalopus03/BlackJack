@@ -44,16 +44,6 @@ public class Hand {
         return Collections.unmodifiableList(cards);
     }
 
-    // Method to check if the hand is a blackjack
-    public boolean isBlackjack() {
-        return cards.size() == 2 && getTotalValue() == 21;
-    }
-
-    // Method to check if the hand is bust (total value exceeds 21)
-    public boolean isBust() {
-        return getTotalValue() > 21;
-    }
-
     // Method to clear the hand (useful for resetting)
     public void clear() {
         cards.clear();

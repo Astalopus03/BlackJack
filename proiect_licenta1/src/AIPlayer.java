@@ -7,12 +7,17 @@ public class AIPlayer {
     private Map<String, Double[]> qTable;
     private double epsilon = 0.1; // Exploration rate
     private double learningRate = 0.1;//influences how much new information overwrites old information in the Q-table.;
-    private double discountFactor = 0.9; //determines how much future rewards are valued compared to immediate rewards.
+    private double discountFactor = 0.7; //determines how much future rewards are valued compared to immediate rewards.
     private Random random;
 
-    public AIPlayer() {
+
+    public AIPlayer(double epsilon, double learningRate, double discountFactor) {
+        super();
+        this.epsilon = epsilon;
+        this.learningRate = learningRate;
+        this.discountFactor = discountFactor;
+        this.qTable = new HashMap<>();
         hand = new Hand();
-        qTable = new HashMap<>();
         random = new Random();
     }
 

@@ -33,16 +33,17 @@ public class Game {
     private int historyIndex;
 
     public Game() {
+        this(0.1, 0.1, 0.9); // Valorile implicite
+    }
+
+    public Game(double epsilon, double learningRate, double discountFactor) {
         deck = new Deck();
-        aiPlayer = new AIPlayer();
         dealer = new Dealer();
-        aiWins = 0;
-        dealerWins = 0;
-        ties = 0;
-        recentResults = new int[TRACKING_SIZE];
+        aiPlayer = new AIPlayer(epsilon, learningRate, discountFactor);
         gameHistory = new GameRecord[TRACKING_SIZE];
-        currentIndex = 0;
         historyIndex = 0;
+        recentResults = new int[TRACKING_SIZE];
+        currentIndex = 0;
     }
 
     private void dealInitialCards() {
@@ -141,12 +142,14 @@ public class Game {
         int aiValue = aiHand.getTotalValue();
         int dealerValue = dealerHand.getTotalValue();
 
-        // Verificăm blackjack (As + carte de 10)
-        boolean aiHasBlackjack = aiValue == 21 && record.numCards == 2 &&
-                record.hasAce && aiHand.getCards().stream().anyMatch(card -> card.getValue() == 10);
+        // Verificăm blackjack (As + carte de 10 puncte în primele două cărți)
+        boolean aiHasBlackjack = aiValue == 21 && aiHand.getCards().size() == 2 &&
+                (aiHand.getCards().get(0).getRank() == Rank.ACE && aiHand.getCards().get(1).getValue() == 10 ||
+                        aiHand.getCards().get(1).getRank() == Rank.ACE && aiHand.getCards().get(0).getValue() == 10);
+
         boolean dealerHasBlackjack = dealerValue == 21 && dealerHand.getCards().size() == 2 &&
-                dealerHand.getCards().stream().anyMatch(card -> card.getRank() == Rank.ACE) &&
-                dealerHand.getCards().stream().anyMatch(card -> card.getValue() == 10);
+                (dealerHand.getCards().get(0).getRank() == Rank.ACE && dealerHand.getCards().get(1).getValue() == 10 ||
+                        dealerHand.getCards().get(1).getRank() == Rank.ACE && dealerHand.getCards().get(0).getValue() == 10);
 
         if (aiValue > 21) {
             record.result = -1;
@@ -275,40 +278,34 @@ public class Game {
         determineOutcome();
     }
 
-    public void playMultipleRounds(int numberOfRounds) {
-        System.out.println("Starting " + numberOfRounds + " rounds of Blackjack...\n");
-        for (int i = 1; i <= numberOfRounds; i++) {
-            System.out.println("=== Round " + i + " of " + numberOfRounds + " ===");
+    public void playMultipleGames(int numGames) {
+        System.out.println("Starting " + numGames + " rounds of Blackjack...\n");
+        for (int i = 1; i <= numGames; i++) {
             playRound();
 
             // Afișăm winrate-ul la fiecare 1000 de runde
             if (i % 1000 == 0) {
+                System.out.printf("\n=== Progress: %d/%d rounds ===\n", i, numGames);
                 calculateWinRate();
             }
         }
-        showResultsSummary();
-        calculateWinRate();
-        exportToCSV(); // Exportăm statisticile la final
-    }
 
-    private void showResultsSummary() {
-        System.out.println("\n=== Final Game Summary ===");
-        System.out.println("Total Rounds Played: " + (aiWins + dealerWins + ties));
-        System.out.println("AI Wins: " + aiWins);
-        System.out.println("Dealer Wins: " + dealerWins);
-        System.out.println("Ties: " + ties);
+        // La final afișăm doar statisticile totale și cele recente
+        System.out.println("\n=== Final Statistics ===");
+        System.out.println("Total Games Played: " + (aiWins + dealerWins + ties));
+        double totalWinRate = (double) aiWins / (aiWins + dealerWins + ties) * 100;
+        double totalDealerWinRate = (double) dealerWins / (aiWins + dealerWins + ties) * 100;
+        double totalTieRate = (double) ties / (aiWins + dealerWins + ties) * 100;
+
+        System.out.printf("Overall Win Rate: %.2f%%\n", totalWinRate);
+        System.out.printf("Overall Dealer Win Rate: %.2f%%\n", totalDealerWinRate);
+        System.out.printf("Overall Tie Rate: %.2f%%\n", totalTieRate);
         System.out.println("------------------------");
 
-        // Calculăm statisticile finale
-        int totalRounds = aiWins + dealerWins + ties;
-        double finalWinRate = (double) aiWins / totalRounds * 100;
-        double finalDealerWinRate = (double) dealerWins / totalRounds * 100;
-        double finalTieRate = (double) ties / totalRounds * 100;
+        System.out.println("\nLast 10,000 Games Statistics:");
+        calculateWinRate();
 
-        System.out.printf("Final Win Rate: %.2f%%\n", finalWinRate);
-        System.out.printf("Final Dealer Win Rate: %.2f%%\n", finalDealerWinRate);
-        System.out.printf("Final Tie Rate: %.2f%%\n", finalTieRate);
-        System.out.println("========================\n");
+        exportToCSV();
     }
 
     private void calculateWinRate() {
@@ -316,35 +313,43 @@ public class Game {
         int dealerWinsInRecent = 0;
         int tiesInRecent = 0;
 
-        // Calculăm statisticile pentru ultimele 10.000 de runde
         for (int i = 0; i < TRACKING_SIZE; i++) {
-            if (recentResults[i] == 1) {
-                aiWinsInRecent++;
-            } else if (recentResults[i] == -1) {
-                dealerWinsInRecent++;
-            } else {
-                tiesInRecent++;
-            }
+            if (recentResults[i] == 1) aiWinsInRecent++;
+            else if (recentResults[i] == -1) dealerWinsInRecent++;
+            else if (recentResults[i] == 0) tiesInRecent++;
         }
 
         double winRate = (double) aiWinsInRecent / TRACKING_SIZE * 100;
         double dealerWinRate = (double) dealerWinsInRecent / TRACKING_SIZE * 100;
         double tieRate = (double) tiesInRecent / TRACKING_SIZE * 100;
 
-        System.out.println("\n=== Recent Statistics (last " + TRACKING_SIZE + " rounds) ===");
-        System.out.printf("Recent Win Rate: %.2f%%\n", winRate);
-        System.out.printf("Recent Dealer Win Rate: %.2f%%\n", dealerWinRate);
-        System.out.printf("Recent Tie Rate: %.2f%%\n", tieRate);
-        System.out.println("------------------------");
-        System.out.println("Recent Total Rounds: " + TRACKING_SIZE);
-        System.out.println("Recent AI Wins: " + aiWinsInRecent);
-        System.out.println("Recent Dealer Wins: " + dealerWinsInRecent);
-        System.out.println("Recent Ties: " + tiesInRecent);
-        System.out.println("========================\n");
+        System.out.printf("Win Rate: %.2f%%\n", winRate);
+        System.out.printf("Dealer Win Rate: %.2f%%\n", dealerWinRate);
+        System.out.printf("Tie Rate: %.2f%%\n", tieRate);
+    }
+
+    public double[] getRecentRates() {
+        int aiWins = 0;
+        int dealerWins = 0;
+        int ties = 0;
+        int totalGames = 0;
+
+        for (int result : recentResults) {
+            if (result == 1) aiWins++;
+            else if (result == -1) dealerWins++;
+            else if (result == 0) ties++;
+            totalGames++;
+        }
+
+        double winRate = (double) aiWins / totalGames;
+        double dealerWinRate = (double) dealerWins / totalGames;
+        double tieRate = (double) ties / totalGames;
+
+        return new double[]{winRate, dealerWinRate, tieRate};
     }
 
     public static void main(String[] args) {
         Game game = new Game();
-        game.playMultipleRounds(1000000);
+        game.playMultipleGames(1000000);
     }
 }
