@@ -1,3 +1,6 @@
+import java.io.FileWriter;
+import java.io.IOException;
+
 public class Game {
     private Deck deck;
     private AIPlayer aiPlayer;
@@ -12,6 +15,22 @@ public class Game {
     private String lastState; // Track the last state before AI's final action
     private boolean lastAction; // Track the last action (hit=true, stand=false)
 
+    // Adăugăm o structură pentru a păstra istoricul detaliat
+    private class GameRecord {
+        int initialHandValue;
+        boolean hasAce;
+        int numCards;
+        int finalHandValue;
+        int dealerVisibleCard;
+        int dealerFinalValue;
+        int numHits;
+        boolean finalAction; // true pentru hit, false pentru stand
+        int result; // 1 pentru victorie, -1 pentru înfrângere, 0 pentru egalitate
+        String resultType; // "normal", "blackjack", "bust"
+    }
+
+    private GameRecord[] gameHistory;
+    private int historyIndex;
 
     public Game() {
         deck = new Deck();
@@ -21,7 +40,9 @@ public class Game {
         dealerWins = 0;
         ties = 0;
         recentResults = new int[TRACKING_SIZE];
+        gameHistory = new GameRecord[TRACKING_SIZE];
         currentIndex = 0;
+        historyIndex = 0;
     }
 
     private void dealInitialCards() {
@@ -99,6 +120,91 @@ public class Game {
         currentIndex = (currentIndex + 1) % TRACKING_SIZE;
     }
 
+    private void recordGame() {
+        GameRecord record = new GameRecord();
+        Hand aiHand = aiPlayer.getHand();
+        Hand dealerHand = dealer.getHand();
+
+        // Calculăm valorile inițiale
+        record.initialHandValue = aiHand.getCards().get(0).getValue() + aiHand.getCards().get(1).getValue();
+        record.hasAce = aiHand.getCards().stream().anyMatch(card -> card.getRank() == Rank.ACE);
+        record.numCards = aiHand.getCards().size();
+        record.finalHandValue = aiHand.getTotalValue();
+        record.dealerVisibleCard = dealerHand.getCards().get(0).getValue();
+        record.dealerFinalValue = dealerHand.getTotalValue();
+
+        // Calculăm numărul de hit-uri
+        record.numHits = record.numCards - 2; // Scădem cărțile inițiale
+        record.finalAction = lastAction;
+
+        // Determinăm rezultatul și tipul
+        int aiValue = aiHand.getTotalValue();
+        int dealerValue = dealerHand.getTotalValue();
+
+        // Verificăm blackjack (As + carte de 10)
+        boolean aiHasBlackjack = aiValue == 21 && record.numCards == 2 &&
+                record.hasAce && aiHand.getCards().stream().anyMatch(card -> card.getValue() == 10);
+        boolean dealerHasBlackjack = dealerValue == 21 && dealerHand.getCards().size() == 2 &&
+                dealerHand.getCards().stream().anyMatch(card -> card.getRank() == Rank.ACE) &&
+                dealerHand.getCards().stream().anyMatch(card -> card.getValue() == 10);
+
+        if (aiValue > 21) {
+            record.result = -1;
+            record.resultType = "bust";
+        } else if (dealerValue > 21) {
+            record.result = 1;
+            record.resultType = "normal";
+        } else if (aiHasBlackjack) {
+            record.result = 1;
+            record.resultType = "blackjack";
+        } else if (dealerHasBlackjack) {
+            record.result = -1;
+            record.resultType = "normal";
+        } else if (aiValue > dealerValue) {
+            record.result = 1;
+            record.resultType = "normal";
+        } else if (dealerValue > aiValue) {
+            record.result = -1;
+            record.resultType = "normal";
+        } else {
+            record.result = 0;
+            record.resultType = "tie";
+        }
+
+        gameHistory[historyIndex] = record;
+        historyIndex = (historyIndex + 1) % TRACKING_SIZE;
+    }
+
+    private void exportToCSV() {
+        try (FileWriter writer = new FileWriter("blackjack_stats.csv")) {
+            // Scriem header-ul
+            writer.write("Initial Hand Value,Has Ace,Number of Cards,Final Hand Value," +
+                    "Dealer Visible Card,Dealer Final Value,Number of Hits,Final Action," +
+                    "Result,Result Type\n");
+
+            // Scriem datele
+            for (int i = 0; i < TRACKING_SIZE; i++) {
+                GameRecord record = gameHistory[i];
+                if (record != null) {
+                    writer.write(String.format("%d,%b,%d,%d,%d,%d,%d,%b,%d,%s\n",
+                            record.initialHandValue,
+                            record.hasAce,
+                            record.numCards,
+                            record.finalHandValue,
+                            record.dealerVisibleCard,
+                            record.dealerFinalValue,
+                            record.numHits,
+                            record.finalAction,
+                            record.result,
+                            record.resultType));
+                }
+            }
+            System.out.println("Statistics exported to blackjack_stats.csv");
+        } catch (IOException e) {
+            System.out.println("Error exporting statistics: " + e.getMessage());
+        }
+    }
+
     private void determineOutcome() {
         System.out.println("\n=== Round Results ===");
         System.out.println("AI's Final Hand:");
@@ -154,6 +260,9 @@ public class Game {
         updateRecentResults(result);
         String nextState = "terminal";
         aiPlayer.updateQTable(lastState, lastAction, reward, nextState);
+
+        // Adăugăm înregistrarea meciului
+        recordGame();
     }
 
     private void playRound() {
@@ -179,6 +288,7 @@ public class Game {
         }
         showResultsSummary();
         calculateWinRate();
+        exportToCSV(); // Exportăm statisticile la final
     }
 
     private void showResultsSummary() {
